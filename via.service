@@ -1,0 +1,15 @@
+[Unit]
+Description=Simple pubsub server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/via localhost:8001
+Restart=always
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target
