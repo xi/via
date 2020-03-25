@@ -1,5 +1,5 @@
 via: via.go
-	go build -o $@ $<
+	go build -buildmode=pie -ldflags="-s -w" -o $@ $<
 
 .PHONY: install
 install:
