@@ -26,7 +26,7 @@ var mux = &sync.RWMutex{}
 var topics = make(map[string]Topic)
 var verbose = false
 
-func getTopic(key string) Topic {
+func pushChannel(key string, ch chan []byte) {
 	mux.RLock()
 	topic, ok := topics[key]
 	mux.RUnlock()
@@ -40,19 +40,15 @@ func getTopic(key string) Topic {
 		mux.Unlock()
 	}
 
-	return topic
-}
-
-func pushChannel(key string, ch chan []byte) {
-	topic := getTopic(key)
-
 	topic.Lock()
 	topic.channels[ch] = true
 	topic.Unlock()
 }
 
 func popChannel(key string, ch chan []byte) {
-	topic := getTopic(key)
+	mux.RLock()
+	topic := topics[key]
+	mux.RUnlock()
 
 	topic.Lock()
 	delete(topic.channels, ch)
@@ -76,7 +72,14 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topic := getTopic(r.URL.Path)
+	mux.RLock()
+	topic, ok := topics[key]
+	mux.RUnlock()
+
+	if !ok {
+		return
+	}
+
 	topic.RLock()
 	defer topic.RUnlock()
 
