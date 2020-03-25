@@ -85,7 +85,12 @@ func popChannel(key string, ch chan []byte) {
 }
 
 func post(w http.ResponseWriter, r *http.Request) {
-	key, _ := splitPassword(r.URL.Path)
+	key, password := splitPassword(r.URL.Path)
+
+	if password != "" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
