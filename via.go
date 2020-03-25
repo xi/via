@@ -128,7 +128,7 @@ func getBlocking(w http.ResponseWriter, r *http.Request) {
 func getSse(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	flusher, ok := w.(http.Flusher)
