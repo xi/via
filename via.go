@@ -141,6 +141,16 @@ func getBlocking(w http.ResponseWriter, r *http.Request) {
 func getSse(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
+	ch := make(chan []byte)
+	allowed := pushChannel(key, password, ch)
+	if !allowed {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	defer popChannel(key, ch)
+
+	ctx := r.Context()
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -153,16 +163,6 @@ func getSse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	ch := make(chan []byte)
-	allowed := pushChannel(key, password, ch)
-	if !allowed {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-	defer popChannel(key, ch)
-
-	ctx := r.Context()
 
 	for {
 		select {
