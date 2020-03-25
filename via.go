@@ -1,9 +1,13 @@
 // Simple pubsub server inspired by https://patchbay.pub
 //
 // Usage: via [-v] [[host]:port]
-// curl http://localhost:8001/someid/  # block
-// curl http://localhost:8001/someid/?sse  # server sent event stream
-// curl http://localhost:8001/someid/ -d somedata
+// curl http://localhost:8001/someid  # block
+// curl http://localhost:8001/someid?sse  # server sent event stream
+// curl http://localhost:8001/someid -d somedata
+//
+// curl http://localhost:8001/someid:somepassword?sse
+// curl http://localhost:8001/someid  # 403
+// curl http://localhost:8001/someid -d somedata  # 200
 package main
 
 import (
@@ -13,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,13 +25,23 @@ import (
 type Topic struct {
 	sync.RWMutex
 	channels map[chan []byte]bool
+	password string
 }
 
 var mux = &sync.RWMutex{}
 var topics = make(map[string]Topic)
 var verbose = false
 
-func pushChannel(key string, ch chan []byte) {
+func splitPassword(combined string) (string, string) {
+	split := strings.SplitN(combined, ":", 2)
+	if len(split) == 2 {
+		return split[0], split[1]
+	} else {
+		return combined, ""
+	}
+}
+
+func pushChannel(key string, password string, ch chan []byte) bool {
 	mux.RLock()
 	topic, ok := topics[key]
 	mux.RUnlock()
@@ -34,15 +49,20 @@ func pushChannel(key string, ch chan []byte) {
 	if !ok {
 		topic = Topic{
 			channels: make(map[chan []byte]bool, 0),
+			password: password,
 		}
 		mux.Lock()
 		topics[key] = topic
 		mux.Unlock()
+	} else if topic.password != password {
+		return false
 	}
 
 	topic.Lock()
 	topic.channels[ch] = true
 	topic.Unlock()
+
+	return true
 }
 
 func popChannel(key string, ch chan []byte) {
@@ -65,6 +85,8 @@ func popChannel(key string, ch chan []byte) {
 }
 
 func post(w http.ResponseWriter, r *http.Request) {
+	key, _ := splitPassword(r.URL.Path)
+
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Println("error reading request body:", err)
@@ -91,14 +113,21 @@ func post(w http.ResponseWriter, r *http.Request) {
 }
 
 func getBlocking(w http.ResponseWriter, r *http.Request) {
-	ch := make(chan []byte)
-	pushChannel(r.URL.Path, ch)
-	defer popChannel(r.URL.Path, ch)
+	key, password := splitPassword(r.URL.Path)
 
+	ch := make(chan []byte)
+	allowed := pushChannel(key, password, ch)
+	if !allowed {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	defer popChannel(key, ch)
 	w.Write(<-ch)
 }
 
 func getSse(w http.ResponseWriter, r *http.Request) {
+	key, password := splitPassword(r.URL.Path)
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -113,8 +142,12 @@ func getSse(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	ch := make(chan []byte)
-	pushChannel(r.URL.Path, ch)
-	defer popChannel(r.URL.Path, ch)
+	allowed := pushChannel(key, password, ch)
+	if !allowed {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	defer popChannel(key, ch)
 
 	ctx := r.Context()
 
