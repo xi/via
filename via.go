@@ -127,7 +127,15 @@ func getBlocking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer popChannel(key, ch)
-	w.Write(<-ch)
+
+	ctx := r.Context()
+
+	select {
+	case <-ctx.Done():
+		return
+	case s := <-ch:
+		w.Write(s)
+	}
 }
 
 func getSse(w http.ResponseWriter, r *http.Request) {
