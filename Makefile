@@ -6,3 +6,4 @@ install:
 	install -D -m 755 via "${DESTDIR}/usr/bin/via"
 	install -D -m 644 via.service "${DESTDIR}/lib/systemd/system/via.service"
 	install -D -m 644 via.nginx "${DESTDIR}/etc/nginx/sites-available/via"
+	install -D -m 644 README.md "${DESTDIR}/usr/share/doc/via/README.md"
