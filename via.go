@@ -151,7 +151,7 @@ func getSse(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	flusher, ok := w.(http.Flusher)
