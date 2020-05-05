@@ -13,11 +13,8 @@ Start the server:
 
 Then start sending requests on the client:
 
-	# initiate GET and wait for data
-	curl http://localhost:8001/someid
-
 	# start listening for server sent event stream
-	curl http://localhost:8001/someid?sse
+	curl http://localhost:8001/someid
 
 	# POST some data
 	curl http://localhost:8001/someid -d somedata
@@ -34,5 +31,6 @@ it at the same time:
 
 -	no support for MPMC (blocking POST)
 -	no support for req/res
+-	no support for blocking GET
 -	support for [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
 -	support for passwords

@@ -1,11 +1,10 @@
 // Simple pubsub server inspired by https://patchbay.pub
 //
 // Usage: via [-v] [[host]:port]
-// curl http://localhost:8001/someid  # block
-// curl http://localhost:8001/someid?sse  # server sent event stream
+// curl http://localhost:8001/someid  # server sent event stream
 // curl http://localhost:8001/someid -d somedata
 //
-// curl http://localhost:8001/someid:somepassword?sse
+// curl http://localhost:8001/someid:somepassword
 // curl http://localhost:8001/someid  # 403
 // curl http://localhost:8001/someid -d somedata  # 200
 package main
@@ -117,28 +116,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getBlocking(w http.ResponseWriter, r *http.Request) {
-	key, password := splitPassword(r.URL.Path)
-
-	ch := make(chan []byte)
-	allowed := pushChannel(key, password, ch)
-	if !allowed {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-	defer popChannel(key, ch)
-
-	ctx := r.Context()
-
-	select {
-	case <-ctx.Done():
-		return
-	case s := <-ch:
-		w.Write(s)
-	}
-}
-
-func getSse(w http.ResponseWriter, r *http.Request) {
+func get(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
 	ch := make(chan []byte)
@@ -186,11 +164,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == "GET" {
-		if r.URL.RawQuery == "sse" {
-			getSse(w, r)
-		} else {
-			getBlocking(w, r)
-		}
+		get(w, r)
 	} else if r.Method == "POST" {
 		post(w, r)
 	} else {
