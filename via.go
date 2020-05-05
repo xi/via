@@ -1,6 +1,6 @@
 // Simple pubsub server inspired by https://patchbay.pub
 //
-// Usage: via [-v] [[host]:port]
+// Usage: via [-v] [port]
 // curl http://localhost:8001/someid  # server sent event stream
 // curl http://localhost:8001/someid -d somedata
 //
@@ -174,7 +174,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "via [-v] [[host]:port]\n")
+		fmt.Fprintf(os.Stderr, "via [-v] [port]\n")
 		flag.PrintDefaults()
 	}
 
@@ -183,10 +183,7 @@ func main() {
 
 	addr := "localhost:8001"
 	if len(flag.Args()) > 0 {
-		addr = flag.Args()[0]
-	}
-	if addr[0] == ':' {
-		addr = "localhost" + addr
+		addr = fmt.Sprintf("localhost:%s", flag.Args()[0]
 	}
 
 	http.HandleFunc("/", handler)

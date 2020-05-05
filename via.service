@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/via localhost:8001
+ExecStart=/usr/bin/via 8001
 Restart=always
 DynamicUser=yes
 ProtectSystem=strict

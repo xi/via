@@ -9,7 +9,7 @@ This is very much inspired by <https://patchbay.pub/> and its clones
 
 Start the server:
 
-	via [-v] [[host]:port]
+	via [-v] [port]
 
 Then start sending requests on the client:
 
