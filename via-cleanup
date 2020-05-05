@@ -1,0 +1,2 @@
+#!/bin/sh
+find /var/via -type f -mtime +7 -delete
