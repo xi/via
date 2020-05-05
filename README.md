@@ -9,23 +9,31 @@ This is very much inspired by <https://patchbay.pub/> and its clones
 
 Start the server:
 
-	via [-v] [port]
+	via [-v] [-d storage_dir] [port]
 
 Then start sending requests on the client:
 
 	# start listening for server sent event stream
-	curl http://localhost:8001/someid
+	curl http://localhost:8001/msg/someid
 
-	# POST some data
-	curl http://localhost:8001/someid -d somedata
+	# POST a message
+	curl http://localhost:8001/msg/someid -d somedata
 
-You can also protect your ID with a password so no one else can listen to
-it at the same time:
+	# Store, get, and delete a document
+	curl http://localhost:8001/store/someid -d someid
+	curl http://localhost:8001/store/someid
+	curl http://localhost:8001/store/someid -X DELETE
 
-	curl http://localhost:8001/someid:somepassword
-	curl http://localhost:8001/someid  # 403
-	curl http://localhost:8001/someid -d somedata  # 200
+You can also protect your message ID with a password so no one else can listen
+to it at the same time:
 
+	curl http://localhost:8001/msg/someid:somepassword
+	curl http://localhost:8001/msg/someid  # 403
+	curl http://localhost:8001/msg/someid -d somedata  # 200
+
+You should regularly clean up old files:
+
+	find {storage_dir} -type f -mtime +7 -delete
 
 ## Differences to patchbay
 
