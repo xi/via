@@ -163,6 +163,7 @@ func getSse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, ": ping\n\n")
 	flusher.Flush()
 
 	for {
