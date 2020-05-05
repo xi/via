@@ -1,5 +1,5 @@
 [Unit]
-Description=Simple pubsub server
+Description=Simple generic HTTP server for messages and storage
 After=network.target
 
 [Service]

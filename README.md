@@ -1,9 +1,9 @@
-# Via - Simple pubsub server
+# Via - Simple generic HTTP server for messages and storage
 
-This is very much inspired by <https://patchbay.pub/> and its clones
-[conduit](https://github.com/prologic/conduit) and
-[duct](https://github.com/schollz/duct).
+This is a minimal but generic server that does two things:
 
+-	pass messages between clients
+-	store data
 
 ## Usage
 
@@ -34,11 +34,3 @@ to it at the same time:
 You should regularly clean up old files:
 
 	find {storage_dir} -type f -mtime +7 -delete
-
-## Differences to patchbay
-
--	no support for MPMC (blocking POST)
--	no support for req/res
--	no support for blocking GET
--	support for [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
--	support for passwords
