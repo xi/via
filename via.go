@@ -170,7 +170,7 @@ func putStore(w http.ResponseWriter, r *http.Request) {
 
 	err = ioutil.WriteFile(path, content, 0644)
 	if err != nil {
-		log.Println("error writing to file:", path, err)
+		log.Println("error writing to file:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -184,7 +184,7 @@ func getStore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	} else if err != nil {
-		log.Println("error reading from file:", path, err)
+		log.Println("error reading from file:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -200,7 +200,7 @@ func deleteStore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	} else if err != nil {
-		log.Println("error removing file:", path, err)
+		log.Println("error removing file:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
