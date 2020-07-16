@@ -77,7 +77,7 @@ func popChannel(key string, ch chan []byte) {
 	}
 }
 
-func getPath(key string) string {
+func getStorePath(key string) string {
 	hash := base64.URLEncoding.EncodeToString([]byte(key))
 	return path.Join(dir, hash)
 }
@@ -158,7 +158,7 @@ func getMsg(w http.ResponseWriter, r *http.Request) {
 }
 
 func putStore(w http.ResponseWriter, r *http.Request) {
-	path := getPath(r.URL.Path)
+	path := getStorePath(r.URL.Path)
 
 	content, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -176,7 +176,7 @@ func putStore(w http.ResponseWriter, r *http.Request) {
 }
 
 func getStore(w http.ResponseWriter, r *http.Request) {
-	path := getPath(r.URL.Path)
+	path := getStorePath(r.URL.Path)
 
 	content, err := ioutil.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -192,7 +192,7 @@ func getStore(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteStore(w http.ResponseWriter, r *http.Request) {
-	path := getPath(r.URL.Path)
+	path := getStorePath(r.URL.Path)
 
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
