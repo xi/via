@@ -78,7 +78,8 @@ func popChannel(key string, ch chan []byte) {
 }
 
 func getStorePath(key string) string {
-	hash := base64.URLEncoding.EncodeToString([]byte(key))
+	rel := strings.TrimPrefix(key, "/store/")
+	hash := base64.URLEncoding.EncodeToString([]byte(rel))
 	return path.Join(dir, hash)
 }
 
