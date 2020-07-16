@@ -237,7 +237,7 @@ func handleStore(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "via [-v] [port]\n")
+		fmt.Fprintf(os.Stderr, "via [-v] [-d storage_dir] [port]\n")
 		flag.PrintDefaults()
 	}
 
