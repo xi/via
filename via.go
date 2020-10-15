@@ -77,7 +77,9 @@ func (topic *Topic) restoreHistory(key string) {
 
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Println("error restoring history:", err)
+		if !os.IsNotExist(err) {
+			log.Println("error restoring history:", err)
+		}
 		return
 	}
 
