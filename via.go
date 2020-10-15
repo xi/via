@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -49,6 +50,50 @@ func getStorePath(key string) string {
 	return path.Join(dir, hash)
 }
 
+func (topic Topic) storeHistory(key string) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
+
+	content, err := json.Marshal(topic.history)
+	if err != nil {
+		log.Println("error storing history:", err)
+		return
+	}
+
+	err = ioutil.WriteFile(path, content, 0644)
+	if err != nil {
+		log.Println("error storing history:", err)
+		return
+	}
+}
+
+func (topic *Topic) restoreHistory(key string) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
+
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Println("error restoring history:", err)
+		return
+	}
+
+	var history []Msg
+	err = json.Unmarshal(content, &history)
+	if err != nil {
+		log.Println("error restoring history:", err)
+		return
+	}
+
+	topic.history = history
+	if len(history) > 0 {
+		topic.lastId = history[len(history)-1].Id
+	}
+}
+
 func (topic *Topic) post(data []byte) {
 	topic.Lock()
 	defer topic.Unlock()
@@ -83,6 +128,9 @@ func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
 			hasHistory: strings.HasPrefix(key, "/hmsg/"),
 			history: make([]Msg, 0),
 			lastId: 0,
+		}
+		if topic.hasHistory {
+			topic.restoreHistory(key)
 		}
 		mux.Lock()
 		topics[key] = topic
@@ -151,6 +199,10 @@ func post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic.post(body)
+
+	if topic.hasHistory {
+		topic.storeHistory(key)
+	}
 }
 
 func get(w http.ResponseWriter, r *http.Request) {
