@@ -40,6 +40,11 @@ func splitPassword(combined string) (string, string) {
 	}
 }
 
+func getStorePath(key string) string {
+	hash := base64.URLEncoding.EncodeToString([]byte(key))
+	return path.Join(dir, hash)
+}
+
 func pushChannel(key string, password string, ch chan Msg) bool {
 	mux.RLock()
 	topic, ok := topics[key]
@@ -82,11 +87,6 @@ func popChannel(key string, ch chan Msg) {
 		delete(topics, key)
 		mux.Unlock()
 	}
-}
-
-func getStorePath(key string) string {
-	hash := base64.URLEncoding.EncodeToString([]byte(key))
-	return path.Join(dir, hash)
 }
 
 func post(w http.ResponseWriter, r *http.Request) {
