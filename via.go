@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,12 +25,15 @@ type Topic struct {
 	sync.RWMutex
 	channels map[chan Msg]bool
 	password string
+	hasHistory bool
+	history []Msg
 	lastId int
 }
 
 var mux = &sync.RWMutex{}
 var topics = make(map[string]*Topic)
 var verbose = false
+var maxHistorySize = 100
 var dir = ""
 
 func splitPassword(combined string) (string, string) {
@@ -40,7 +45,100 @@ func splitPassword(combined string) (string, string) {
 	}
 }
 
-func pushChannel(key string, password string, ch chan Msg) bool {
+func getStorePath(key string) string {
+	hash := base64.URLEncoding.EncodeToString([]byte(key))
+	return path.Join(dir, hash)
+}
+
+func (topic Topic) storeHistory(key string) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
+
+	content, err := json.Marshal(topic.history)
+	if err != nil {
+		log.Println("error storing history:", err)
+		return
+	}
+
+	err = ioutil.WriteFile(path, content, 0644)
+	if err != nil {
+		log.Println("error storing history:", err)
+		return
+	}
+}
+
+func (topic *Topic) restoreHistory(key string) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
+
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Println("error restoring history:", err)
+		return
+	}
+
+	var history []Msg
+	err = json.Unmarshal(content, &history)
+	if err != nil {
+		log.Println("error restoring history:", err)
+		return
+	}
+
+	topic.history = history
+	if len(history) > 0 {
+		topic.lastId = history[len(history)-1].Id
+	}
+}
+
+func (topic *Topic) post(data []byte) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	topic.lastId += 1
+	msg := Msg{topic.lastId, data}
+
+	if topic.hasHistory {
+		topic.history = append(topic.history, msg)
+
+		for len(topic.history) > maxHistorySize {
+			topic.history = topic.history[1:]
+		}
+	}
+
+	for channel := range topic.channels {
+		go func(ch chan Msg) {
+			ch <- msg
+		}(channel)
+	}
+}
+
+func (topic *Topic) put(data []byte, lastId int) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	if len(topic.history) > 0 && lastId < topic.history[0].Id {
+		return
+	}
+
+	history := make([]Msg, 0)
+	history = append(history, Msg{lastId, data})
+	for _, msg := range topic.history {
+		if msg.Id > lastId {
+			history = append(history, msg)
+		}
+	}
+	topic.history = history
+
+	if lastId > topic.lastId {
+		topic.lastId = lastId
+	}
+}
+
+func getTopic(key string, password string) (*Topic, bool) {
 	mux.RLock()
 	topic, ok := topics[key]
 	mux.RUnlock()
@@ -49,18 +147,42 @@ func pushChannel(key string, password string, ch chan Msg) bool {
 		topic = &Topic{
 			channels: make(map[chan Msg]bool, 0),
 			password: password,
+			hasHistory: strings.HasPrefix(key, "/hmsg/"),
+			history: make([]Msg, 0),
 			lastId: 0,
+		}
+		if topic.hasHistory {
+			topic.restoreHistory(key)
 		}
 		mux.Lock()
 		topics[key] = topic
 		mux.Unlock()
 	} else if topic.password != password {
+		return nil, false
+	}
+
+	return topic, true
+}
+
+func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
+	topic, allowed := getTopic(key, password)
+	if !allowed {
 		return false
 	}
 
 	topic.Lock()
 	topic.channels[ch] = true
 	topic.Unlock()
+
+	if topic.hasHistory {
+		go func(t Topic) {
+			for _, msg := range t.history {
+				if msg.Id > lastId {
+					ch <- msg
+				}
+			}
+		}(*topic)
+	}
 
 	return true
 }
@@ -84,13 +206,7 @@ func popChannel(key string, ch chan Msg) {
 	}
 }
 
-func getStorePath(key string) string {
-	rel := strings.TrimPrefix(key, "/store/")
-	hash := base64.URLEncoding.EncodeToString([]byte(rel))
-	return path.Join(dir, hash)
-}
-
-func postMsg(w http.ResponseWriter, r *http.Request) {
+func post(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
 	if password != "" {
@@ -113,24 +229,23 @@ func postMsg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topic.RLock()
-	defer topic.RUnlock()
+	topic.post(body)
 
-	topic.lastId += 1
-	msg := Msg{topic.lastId, body}
-
-	for channel := range topic.channels {
-		go func(ch chan Msg) {
-			ch <- msg
-		}(channel)
+	if topic.hasHistory {
+		topic.storeHistory(key)
 	}
 }
 
-func getMsg(w http.ResponseWriter, r *http.Request) {
+func get(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
+	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
+	if err != nil {
+		lastId = 0
+	}
+
 	ch := make(chan Msg)
-	allowed := pushChannel(key, password, ch)
+	allowed := pushChannel(key, password, ch, lastId)
 	if !allowed {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
@@ -168,79 +283,47 @@ func getMsg(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func putStore(w http.ResponseWriter, r *http.Request) {
-	path := getStorePath(r.URL.Path)
+func put(w http.ResponseWriter, r *http.Request) {
+	key, password := splitPassword(r.URL.Path)
 
-	content, err := ioutil.ReadAll(r.Body)
+	topic, allowed := getTopic(key, password)
+
+	if !allowed {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	} else if !topic.hasHistory {
+		http.Error(w, "No history", http.StatusBadRequest)
+		return
+	}
+
+	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
+	if err != nil {
+		http.Error(w, "Missing Last-Event-ID", http.StatusBadRequest)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Println("error reading request body:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	err = ioutil.WriteFile(path, content, 0644)
-	if err != nil {
-		log.Println("error writing to file:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	topic.put(body, lastId)
+	topic.storeHistory(key)
 }
 
-func getStore(w http.ResponseWriter, r *http.Request) {
-	path := getStorePath(r.URL.Path)
-
-	content, err := ioutil.ReadFile(path)
-	if os.IsNotExist(err) {
-		http.Error(w, "Not Found", http.StatusNotFound)
-		return
-	} else if err != nil {
-		log.Println("error reading from file:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(content)
-}
-
-func deleteStore(w http.ResponseWriter, r *http.Request) {
-	path := getStorePath(r.URL.Path)
-
-	err := os.Remove(path)
-	if os.IsNotExist(err) {
-		http.Error(w, "Not Found", http.StatusNotFound)
-		return
-	} else if err != nil {
-		log.Println("error removing file:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-}
-
-func handleMsg(w http.ResponseWriter, r *http.Request) {
+func handler(w http.ResponseWriter, r *http.Request) {
 	if verbose {
 		log.Println(r.Method, r.URL)
 	}
 
 	if r.Method == http.MethodGet {
-		getMsg(w, r)
+		get(w, r)
 	} else if r.Method == http.MethodPost {
-		postMsg(w, r)
-	} else {
-		http.Error(w, "Unsupported Method", http.StatusMethodNotAllowed)
-	}
-}
-
-func handleStore(w http.ResponseWriter, r *http.Request) {
-	if verbose {
-		log.Println(r.Method, r.URL)
-	}
-
-	if r.Method == http.MethodPut || r.Method == http.MethodPost {
-		putStore(w, r)
-	} else if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		getStore(w, r)
-	} else if r.Method == http.MethodDelete {
-		deleteStore(w, r)
+		post(w, r)
+	} else if r.Method == http.MethodPut {
+		put(w, r)
 	} else {
 		http.Error(w, "Unsupported Method", http.StatusMethodNotAllowed)
 	}
@@ -261,8 +344,8 @@ func main() {
 		addr = fmt.Sprintf("localhost:%s", flag.Args()[0])
 	}
 
-	http.HandleFunc("/msg/", handleMsg)
-	http.HandleFunc("/store/", handleStore)
+	http.HandleFunc("/msg/", handler)
+	http.HandleFunc("/hmsg/", handler)
 
 	log.Printf("Serving on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
