@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +48,7 @@ func getStorePath(key string) string {
 	return path.Join(dir, hash)
 }
 
-func pushChannel(key string, password string, ch chan Msg) bool {
+func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
 	mux.RLock()
 	topic, ok := topics[key]
 	mux.RUnlock()
@@ -70,6 +71,16 @@ func pushChannel(key string, password string, ch chan Msg) bool {
 	topic.Lock()
 	topic.channels[ch] = true
 	topic.Unlock()
+
+	if topic.hasHistory {
+		go func(t Topic) {
+			for _, msg := range t.history {
+				if msg.Id > lastId {
+					ch <- msg
+				}
+			}
+		}(*topic)
+	}
 
 	return true
 }
@@ -136,8 +147,13 @@ func post(w http.ResponseWriter, r *http.Request) {
 func get(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
+	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
+	if err != nil {
+		lastId = 0
+	}
+
 	ch := make(chan Msg)
-	allowed := pushChannel(key, password, ch)
+	allowed := pushChannel(key, password, ch, lastId)
 	if !allowed {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
