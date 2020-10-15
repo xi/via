@@ -9,7 +9,7 @@ server {
 		if ($request_method = 'OPTIONS') {
 			add_header 'Access-Control-Allow-Origin' '*';
 			add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, HEAD, OPTIONS';
-			add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
+			add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Last-Event-ID';
 			add_header 'Access-Control-Max-Age' 1728000;
 			add_header 'Content-Type' 'text/plain; charset=utf-8';
 			add_header 'Content-Length' 0;
@@ -17,7 +17,7 @@ server {
 		}
 		add_header 'Access-Control-Allow-Origin' '*';
 		add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, HEAD, OPTIONS';
-		add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
+		add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Last-Event-ID';
 
 		add_header 'Link' '<https://github.com/xi/via>; rel="help"';
 		proxy_pass http://localhost:8001;
