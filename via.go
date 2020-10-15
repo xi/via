@@ -85,12 +85,11 @@ func popChannel(key string, ch chan Msg) {
 }
 
 func getStorePath(key string) string {
-	rel := strings.TrimPrefix(key, "/store/")
-	hash := base64.URLEncoding.EncodeToString([]byte(rel))
+	hash := base64.URLEncoding.EncodeToString([]byte(key))
 	return path.Join(dir, hash)
 }
 
-func postMsg(w http.ResponseWriter, r *http.Request) {
+func post(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
 	if password != "" {
@@ -126,7 +125,7 @@ func postMsg(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getMsg(w http.ResponseWriter, r *http.Request) {
+func get(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
 	ch := make(chan Msg)
@@ -168,79 +167,15 @@ func getMsg(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func putStore(w http.ResponseWriter, r *http.Request) {
-	path := getStorePath(r.URL.Path)
-
-	content, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		log.Println("error reading request body:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	err = ioutil.WriteFile(path, content, 0644)
-	if err != nil {
-		log.Println("error writing to file:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-}
-
-func getStore(w http.ResponseWriter, r *http.Request) {
-	path := getStorePath(r.URL.Path)
-
-	content, err := ioutil.ReadFile(path)
-	if os.IsNotExist(err) {
-		http.Error(w, "Not Found", http.StatusNotFound)
-		return
-	} else if err != nil {
-		log.Println("error reading from file:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(content)
-}
-
-func deleteStore(w http.ResponseWriter, r *http.Request) {
-	path := getStorePath(r.URL.Path)
-
-	err := os.Remove(path)
-	if os.IsNotExist(err) {
-		http.Error(w, "Not Found", http.StatusNotFound)
-		return
-	} else if err != nil {
-		log.Println("error removing file:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-}
-
-func handleMsg(w http.ResponseWriter, r *http.Request) {
+func handler(w http.ResponseWriter, r *http.Request) {
 	if verbose {
 		log.Println(r.Method, r.URL)
 	}
 
 	if r.Method == http.MethodGet {
-		getMsg(w, r)
+		get(w, r)
 	} else if r.Method == http.MethodPost {
-		postMsg(w, r)
-	} else {
-		http.Error(w, "Unsupported Method", http.StatusMethodNotAllowed)
-	}
-}
-
-func handleStore(w http.ResponseWriter, r *http.Request) {
-	if verbose {
-		log.Println(r.Method, r.URL)
-	}
-
-	if r.Method == http.MethodPut || r.Method == http.MethodPost {
-		putStore(w, r)
-	} else if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		getStore(w, r)
-	} else if r.Method == http.MethodDelete {
-		deleteStore(w, r)
+		post(w, r)
 	} else {
 		http.Error(w, "Unsupported Method", http.StatusMethodNotAllowed)
 	}
@@ -261,8 +196,7 @@ func main() {
 		addr = fmt.Sprintf("localhost:%s", flag.Args()[0])
 	}
 
-	http.HandleFunc("/msg/", handleMsg)
-	http.HandleFunc("/store/", handleStore)
+	http.HandleFunc("/msg/", handler)
 
 	log.Printf("Serving on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
