@@ -116,7 +116,29 @@ func (topic *Topic) post(data []byte) {
 	}
 }
 
-func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
+func (topic *Topic) put(data []byte, lastId int) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	if len(topic.history) > 0 && lastId < topic.history[0].Id {
+		return
+	}
+
+	history := make([]Msg, 0)
+	history = append(history, Msg{lastId, data})
+	for _, msg := range topic.history {
+		if msg.Id > lastId {
+			history = append(history, msg)
+		}
+	}
+	topic.history = history
+
+	if lastId > topic.lastId {
+		topic.lastId = lastId
+	}
+}
+
+func getTopic(key string, password string) (*Topic, bool) {
 	mux.RLock()
 	topic, ok := topics[key]
 	mux.RUnlock()
@@ -136,6 +158,15 @@ func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
 		topics[key] = topic
 		mux.Unlock()
 	} else if topic.password != password {
+		return nil, false
+	}
+
+	return topic, true
+}
+
+func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
+	topic, allowed := getTopic(key, password)
+	if !allowed {
 		return false
 	}
 
@@ -252,6 +283,36 @@ func get(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func put(w http.ResponseWriter, r *http.Request) {
+	key, password := splitPassword(r.URL.Path)
+
+	topic, allowed := getTopic(key, password)
+
+	if !allowed {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	} else if !topic.hasHistory {
+		http.Error(w, "No history", http.StatusBadRequest)
+		return
+	}
+
+	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
+	if err != nil {
+		http.Error(w, "Missing Last-Event-ID", http.StatusBadRequest)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("error reading request body:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	topic.put(body, lastId)
+	topic.storeHistory(key)
+}
+
 func handler(w http.ResponseWriter, r *http.Request) {
 	if verbose {
 		log.Println(r.Method, r.URL)
@@ -261,6 +322,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		get(w, r)
 	} else if r.Method == http.MethodPost {
 		post(w, r)
+	} else if r.Method == http.MethodPut {
+		put(w, r)
 	} else {
 		http.Error(w, "Unsupported Method", http.StatusMethodNotAllowed)
 	}
