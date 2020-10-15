@@ -32,6 +32,7 @@ type Topic struct {
 var mux = &sync.RWMutex{}
 var topics = make(map[string]*Topic)
 var verbose = false
+var maxHistorySize = 100
 var dir = ""
 
 func splitPassword(combined string) (string, string) {
@@ -135,6 +136,10 @@ func post(w http.ResponseWriter, r *http.Request) {
 
 	if topic.hasHistory {
 		topic.history = append(topic.history, msg)
+
+		for len(topic.history) > maxHistorySize {
+			topic.history = topic.history[1:]
+		}
 	}
 
 	for channel := range topic.channels {
