@@ -23,6 +23,8 @@ type Topic struct {
 	sync.RWMutex
 	channels map[chan Msg]bool
 	password string
+	hasHistory bool
+	history []Msg
 	lastId int
 }
 
@@ -54,6 +56,8 @@ func pushChannel(key string, password string, ch chan Msg) bool {
 		topic = &Topic{
 			channels: make(map[chan Msg]bool, 0),
 			password: password,
+			hasHistory: strings.HasPrefix(key, "/hmsg/"),
+			history: make([]Msg, 0),
 			lastId: 0,
 		}
 		mux.Lock()
@@ -117,6 +121,10 @@ func post(w http.ResponseWriter, r *http.Request) {
 
 	topic.lastId += 1
 	msg := Msg{topic.lastId, body}
+
+	if topic.hasHistory {
+		topic.history = append(topic.history, msg)
+	}
 
 	for channel := range topic.channels {
 		go func(ch chan Msg) {
@@ -197,6 +205,7 @@ func main() {
 	}
 
 	http.HandleFunc("/msg/", handler)
+	http.HandleFunc("/hmsg/", handler)
 
 	log.Printf("Serving on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
