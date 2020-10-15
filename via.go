@@ -14,14 +14,20 @@ import (
 	"time"
 )
 
+type Msg struct {
+	Id int
+	Data []byte
+}
+
 type Topic struct {
 	sync.RWMutex
-	channels map[chan []byte]bool
+	channels map[chan Msg]bool
 	password string
+	lastId int
 }
 
 var mux = &sync.RWMutex{}
-var topics = make(map[string]Topic)
+var topics = make(map[string]*Topic)
 var verbose = false
 var dir = ""
 
@@ -34,15 +40,16 @@ func splitPassword(combined string) (string, string) {
 	}
 }
 
-func pushChannel(key string, password string, ch chan []byte) bool {
+func pushChannel(key string, password string, ch chan Msg) bool {
 	mux.RLock()
 	topic, ok := topics[key]
 	mux.RUnlock()
 
 	if !ok {
-		topic = Topic{
-			channels: make(map[chan []byte]bool, 0),
+		topic = &Topic{
+			channels: make(map[chan Msg]bool, 0),
 			password: password,
+			lastId: 0,
 		}
 		mux.Lock()
 		topics[key] = topic
@@ -58,7 +65,7 @@ func pushChannel(key string, password string, ch chan []byte) bool {
 	return true
 }
 
-func popChannel(key string, ch chan []byte) {
+func popChannel(key string, ch chan Msg) {
 	mux.RLock()
 	topic := topics[key]
 	mux.RUnlock()
@@ -109,9 +116,12 @@ func postMsg(w http.ResponseWriter, r *http.Request) {
 	topic.RLock()
 	defer topic.RUnlock()
 
+	topic.lastId += 1
+	msg := Msg{topic.lastId, body}
+
 	for channel := range topic.channels {
-		go func(ch chan []byte) {
-			ch <- body
+		go func(ch chan Msg) {
+			ch <- msg
 		}(channel)
 	}
 }
@@ -119,7 +129,7 @@ func postMsg(w http.ResponseWriter, r *http.Request) {
 func getMsg(w http.ResponseWriter, r *http.Request) {
 	key, password := splitPassword(r.URL.Path)
 
-	ch := make(chan []byte)
+	ch := make(chan Msg)
 	allowed := pushChannel(key, password, ch)
 	if !allowed {
 		http.Error(w, "Forbidden", http.StatusForbidden)
@@ -151,8 +161,8 @@ func getMsg(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			fmt.Fprintf(w, ": ping\n\n")
 			flusher.Flush()
-		case s := <-ch:
-			fmt.Fprintf(w, "data: %s\n\n", s)
+		case msg := <-ch:
+			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", msg.Id, msg.Data)
 			flusher.Flush()
 		}
 	}
