@@ -49,6 +49,28 @@ func getStorePath(key string) string {
 	return path.Join(dir, hash)
 }
 
+func (topic *Topic) post(data []byte) {
+	topic.Lock()
+	defer topic.Unlock()
+
+	topic.lastId += 1
+	msg := Msg{topic.lastId, data}
+
+	if topic.hasHistory {
+		topic.history = append(topic.history, msg)
+
+		for len(topic.history) > maxHistorySize {
+			topic.history = topic.history[1:]
+		}
+	}
+
+	for channel := range topic.channels {
+		go func(ch chan Msg) {
+			ch <- msg
+		}(channel)
+	}
+}
+
 func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
 	mux.RLock()
 	topic, ok := topics[key]
@@ -128,25 +150,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topic.RLock()
-	defer topic.RUnlock()
-
-	topic.lastId += 1
-	msg := Msg{topic.lastId, body}
-
-	if topic.hasHistory {
-		topic.history = append(topic.history, msg)
-
-		for len(topic.history) > maxHistorySize {
-			topic.history = topic.history[1:]
-		}
-	}
-
-	for channel := range topic.channels {
-		go func(ch chan Msg) {
-			ch <- msg
-		}(channel)
-	}
+	topic.post(body)
 }
 
 func get(w http.ResponseWriter, r *http.Request) {
