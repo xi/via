@@ -22,7 +22,7 @@ type Msg struct {
 }
 
 type Topic struct {
-	sync.RWMutex
+	sync.Mutex
 	channels map[chan Msg]bool
 	password string
 	hasHistory bool
@@ -51,9 +51,6 @@ func getStorePath(key string) string {
 }
 
 func (topic Topic) storeHistory(key string) {
-	topic.Lock()
-	defer topic.Unlock()
-
 	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
 
 	content, err := json.Marshal(topic.history)
@@ -70,9 +67,6 @@ func (topic Topic) storeHistory(key string) {
 }
 
 func (topic *Topic) restoreHistory(key string) {
-	topic.Lock()
-	defer topic.Unlock()
-
 	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
 
 	content, err := ioutil.ReadFile(path)
@@ -97,9 +91,6 @@ func (topic *Topic) restoreHistory(key string) {
 }
 
 func (topic *Topic) post(data []byte) {
-	topic.Lock()
-	defer topic.Unlock()
-
 	topic.lastId += 1
 	msg := Msg{topic.lastId, data}
 
@@ -111,17 +102,12 @@ func (topic *Topic) post(data []byte) {
 		}
 	}
 
-	for channel := range topic.channels {
-		go func(ch chan Msg) {
-			ch <- msg
-		}(channel)
+	for ch := range topic.channels {
+		ch <- msg
 	}
 }
 
 func (topic *Topic) put(data []byte, lastId int) {
-	topic.Lock()
-	defer topic.Unlock()
-
 	if len(topic.history) > 0 && lastId < topic.history[0].Id {
 		return
 	}
@@ -172,19 +158,18 @@ func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
 		return false
 	}
 
-	topic.Lock()
-	topic.channels[ch] = true
-	topic.Unlock()
+	go func() {
+		topic.Lock()
+		defer topic.Unlock()
 
-	if topic.hasHistory {
-		go func(t Topic) {
-			for _, msg := range t.history {
-				if msg.Id > lastId {
-					ch <- msg
-				}
+		for _, msg := range topic.history {
+			if msg.Id > lastId {
+				ch <- msg
 			}
-		}(*topic)
-	}
+		}
+
+		topic.channels[ch] = true
+	}()
 
 	return true
 }
@@ -230,6 +215,9 @@ func post(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	topic.Lock()
+	defer topic.Unlock()
 
 	topic.post(body)
 
@@ -310,6 +298,9 @@ func put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	topic.Lock()
+	defer topic.Unlock()
 
 	topic.put(body, lastId)
 	topic.storeHistory(key)
