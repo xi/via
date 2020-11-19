@@ -90,6 +90,15 @@ func (topic *Topic) restoreHistory(key string) {
 	}
 }
 
+func (topic *Topic) deleteHistory(key string) {
+	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
+
+	err := os.Remove(path)
+	if err != nil && !os.IsNotExist(err) {
+		log.Println("error deleting history:", err)
+	}
+}
+
 func (topic *Topic) post(data []byte) {
 	topic.lastId += 1
 	msg := Msg{topic.lastId, data}
@@ -306,6 +315,26 @@ func put(w http.ResponseWriter, r *http.Request) {
 	topic.storeHistory(key)
 }
 
+func del(w http.ResponseWriter, r *http.Request) {
+	key, password := splitPassword(r.URL.Path)
+
+	topic, allowed := getTopic(key, password)
+
+	if !allowed {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	} else if !topic.hasHistory {
+		http.Error(w, "No history", http.StatusBadRequest)
+		return
+	}
+
+	topic.Lock()
+	defer topic.Unlock()
+
+	topic.history = make([]Msg, 0)
+	topic.deleteHistory(key)
+}
+
 func handler(w http.ResponseWriter, r *http.Request) {
 	if verbose {
 		log.Println(r.Method, r.URL)
@@ -317,6 +346,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		post(w, r)
 	} else if r.Method == http.MethodPut {
 		put(w, r)
+	} else if r.Method == http.MethodDelete {
+		del(w, r)
 	} else {
 		http.Error(w, "Unsupported Method", http.StatusMethodNotAllowed)
 	}

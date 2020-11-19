@@ -26,6 +26,9 @@ Use the `hmsg` prefix if you want to keep a history:
 	# POST works just as before
 	curl http://localhost:8001/hmsg/someid -d somedata
 
+	# DELETE deletes the history
+	curl http://localhost:8001/hmsg/someid -X DELETE
+
 	# the history only keeps up to 100 entries.
 	# you can optimize it by replacing all entries by a single message
 	curl http://localhost:8001/hmsg/someid -d combined -H 'Last-Event-Id: 3' -X PUT
