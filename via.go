@@ -50,7 +50,7 @@ func getStorePath(key string) string {
 	return path.Join(dir, hash)
 }
 
-func (topic Topic) storeHistory(key string) {
+func (topic *Topic) storeHistory(key string) {
 	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
 
 	content, err := json.Marshal(topic.history)
