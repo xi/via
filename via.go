@@ -1,18 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -371,6 +375,22 @@ func main() {
 	http.HandleFunc("/msg/", handler)
 	http.HandleFunc("/hmsg/", handler)
 
-	log.Printf("Serving on http://%s", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	ctx, unregisterSignals := signal.NotifyContext(
+		context.Background(), os.Interrupt, syscall.SIGTERM,
+	)
+	ctxFactory := func(l net.Listener) context.Context { return ctx }
+	server := &http.Server{Addr: addr, BaseContext: ctxFactory}
+
+	go func() {
+		log.Printf("Serving on http://%s", addr)
+		err := server.ListenAndServe()
+		if err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+	unregisterSignals()
+	log.Println("Shutting down server…")
+	server.Shutdown(context.Background())
 }
