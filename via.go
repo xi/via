@@ -21,17 +21,17 @@ import (
 )
 
 type Msg struct {
-	Id int
+	Id   int
 	Data []byte
 }
 
 type Topic struct {
 	sync.Mutex
-	channels map[chan Msg]bool
-	password string
+	channels   map[chan Msg]bool
+	password   string
 	hasHistory bool
-	history []Msg
-	lastId int
+	history    []Msg
+	lastId     int
 }
 
 var mux = &sync.RWMutex{}
@@ -146,11 +146,11 @@ func getTopic(key string, password string) (*Topic, bool) {
 
 	if !ok {
 		topic = &Topic{
-			channels: make(map[chan Msg]bool, 0),
-			password: password,
+			channels:   make(map[chan Msg]bool, 0),
+			password:   password,
 			hasHistory: strings.HasPrefix(key, "/hmsg/"),
-			history: make([]Msg, 0),
-			lastId: 0,
+			history:    make([]Msg, 0),
+			lastId:     0,
 		}
 		if topic.hasHistory {
 			topic.restoreHistory(key)
