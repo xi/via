@@ -225,6 +225,12 @@ func post(w http.ResponseWriter, r *http.Request) {
 	topic, ok := topics[key]
 	mux.RUnlock()
 
+	response := make(map[string]int)
+	defer func() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}()
+
 	if !ok {
 		return
 	}
@@ -236,9 +242,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 
 	if topic.hasHistory {
 		topic.storeHistory(key)
-
-		remain := maxHistorySize - len(topic.history)
-		w.Header().Set("X-Via-History-Remaining", fmt.Sprintf("%d", remain))
+		response["historyRemaining"] = maxHistorySize - len(topic.history)
 	}
 }
 
