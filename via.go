@@ -236,6 +236,9 @@ func post(w http.ResponseWriter, r *http.Request) {
 
 	if topic.hasHistory {
 		topic.storeHistory(key)
+
+		remain := maxHistorySize - len(topic.history)
+		w.Header().Set("X-Via-History-Remaining", fmt.Sprintf("%d", remain))
 	}
 }
 
