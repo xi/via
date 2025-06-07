@@ -44,6 +44,10 @@ func getStorePath(key string) string {
 	return path.Join(dir, hash)
 }
 
+func hasHistory(key string) bool {
+	return strings.HasPrefix(key, "/hmsg/")
+}
+
 func (topic *Topic) storeHistory(key string) {
 	content, err := json.Marshal(topic.history)
 	if err != nil {
@@ -135,7 +139,7 @@ func getTopic(key string) *Topic {
 	if !ok {
 		topic = &Topic{
 			channels:   make(map[chan Msg]bool, 0),
-			hasHistory: strings.HasPrefix(key, "/hmsg/"),
+			hasHistory: hasHistory(key),
 			history:    make([]Msg, 0),
 			lastId:     0,
 		}
@@ -261,12 +265,12 @@ func get(w http.ResponseWriter, r *http.Request) {
 }
 
 func put(w http.ResponseWriter, r *http.Request) {
-	topic := getTopic(r.URL.Path)
-
-	if !topic.hasHistory {
+	if !hasHistory(r.URL.Path) {
 		http.Error(w, "No history", http.StatusBadRequest)
 		return
 	}
+
+	topic := getTopic(r.URL.Path)
 
 	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
 	if err != nil {
@@ -289,12 +293,12 @@ func put(w http.ResponseWriter, r *http.Request) {
 }
 
 func del(w http.ResponseWriter, r *http.Request) {
-	topic := getTopic(r.URL.Path)
-
-	if !topic.hasHistory {
+	if !hasHistory(r.URL.Path) {
 		http.Error(w, "No history", http.StatusBadRequest)
 		return
 	}
+
+	topic := getTopic(r.URL.Path)
 
 	topic.Lock()
 	defer topic.Unlock()
