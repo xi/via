@@ -28,7 +28,6 @@ type Msg struct {
 type Topic struct {
 	sync.Mutex
 	channels   map[chan Msg]bool
-	password   string
 	hasHistory bool
 	history    []Msg
 	lastId     int
@@ -40,29 +39,19 @@ var verbose = false
 var maxHistorySize = 100
 var dir = ""
 
-func splitPassword(combined string) (string, string) {
-	split := strings.SplitN(combined, ":", 2)
-	if len(split) == 2 {
-		return split[0], split[1]
-	} else {
-		return combined, ""
-	}
-}
-
 func getStorePath(key string) string {
 	hash := base64.URLEncoding.EncodeToString([]byte(key))
 	return path.Join(dir, hash)
 }
 
 func (topic *Topic) storeHistory(key string) {
-	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
-
 	content, err := json.Marshal(topic.history)
 	if err != nil {
 		log.Println("error storing history:", err)
 		return
 	}
 
+	path := getStorePath(key)
 	err = ioutil.WriteFile(path, content, 0644)
 	if err != nil {
 		log.Println("error storing history:", err)
@@ -71,7 +60,7 @@ func (topic *Topic) storeHistory(key string) {
 }
 
 func (topic *Topic) restoreHistory(key string) {
-	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
+	path := getStorePath(key)
 
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -95,8 +84,7 @@ func (topic *Topic) restoreHistory(key string) {
 }
 
 func (topic *Topic) deleteHistory(key string) {
-	path := getStorePath(fmt.Sprintf("%s:%s", key, topic.password))
-
+	path := getStorePath(key)
 	err := os.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
 		log.Println("error deleting history:", err)
@@ -139,7 +127,7 @@ func (topic *Topic) put(data []byte, lastId int) {
 	}
 }
 
-func getTopic(key string, password string) (*Topic, bool) {
+func getTopic(key string) *Topic {
 	mux.RLock()
 	topic, ok := topics[key]
 	mux.RUnlock()
@@ -147,7 +135,6 @@ func getTopic(key string, password string) (*Topic, bool) {
 	if !ok {
 		topic = &Topic{
 			channels:   make(map[chan Msg]bool, 0),
-			password:   password,
 			hasHistory: strings.HasPrefix(key, "/hmsg/"),
 			history:    make([]Msg, 0),
 			lastId:     0,
@@ -158,18 +145,13 @@ func getTopic(key string, password string) (*Topic, bool) {
 		mux.Lock()
 		topics[key] = topic
 		mux.Unlock()
-	} else if topic.password != password {
-		return nil, false
 	}
 
-	return topic, true
+	return topic
 }
 
-func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
-	topic, allowed := getTopic(key, password)
-	if !allowed {
-		return false
-	}
+func pushChannel(key string, ch chan Msg, lastId int) {
+	topic := getTopic(key)
 
 	go func() {
 		topic.Lock()
@@ -183,8 +165,6 @@ func pushChannel(key string, password string, ch chan Msg, lastId int) bool {
 
 		topic.channels[ch] = true
 	}()
-
-	return true
 }
 
 func popChannel(key string, ch chan Msg) {
@@ -207,13 +187,6 @@ func popChannel(key string, ch chan Msg) {
 }
 
 func post(w http.ResponseWriter, r *http.Request) {
-	key, password := splitPassword(r.URL.Path)
-
-	if password != "" {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Println("error reading request body:", err)
@@ -222,7 +195,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mux.RLock()
-	topic, ok := topics[key]
+	topic, ok := topics[r.URL.Path]
 	mux.RUnlock()
 
 	response := make(map[string]int)
@@ -241,26 +214,20 @@ func post(w http.ResponseWriter, r *http.Request) {
 	topic.post(body)
 
 	if topic.hasHistory {
-		topic.storeHistory(key)
+		topic.storeHistory(r.URL.Path)
 		response["historyRemaining"] = maxHistorySize - len(topic.history)
 	}
 }
 
 func get(w http.ResponseWriter, r *http.Request) {
-	key, password := splitPassword(r.URL.Path)
-
 	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
 	if err != nil {
 		lastId = 0
 	}
 
 	ch := make(chan Msg)
-	allowed := pushChannel(key, password, ch, lastId)
-	if !allowed {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-	defer popChannel(key, ch)
+	pushChannel(r.URL.Path, ch, lastId)
+	defer popChannel(r.URL.Path, ch)
 
 	ctx := r.Context()
 
@@ -294,14 +261,9 @@ func get(w http.ResponseWriter, r *http.Request) {
 }
 
 func put(w http.ResponseWriter, r *http.Request) {
-	key, password := splitPassword(r.URL.Path)
+	topic := getTopic(r.URL.Path)
 
-	topic, allowed := getTopic(key, password)
-
-	if !allowed {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	} else if !topic.hasHistory {
+	if !topic.hasHistory {
 		http.Error(w, "No history", http.StatusBadRequest)
 		return
 	}
@@ -323,18 +285,13 @@ func put(w http.ResponseWriter, r *http.Request) {
 	defer topic.Unlock()
 
 	topic.put(body, lastId)
-	topic.storeHistory(key)
+	topic.storeHistory(r.URL.Path)
 }
 
 func del(w http.ResponseWriter, r *http.Request) {
-	key, password := splitPassword(r.URL.Path)
+	topic := getTopic(r.URL.Path)
 
-	topic, allowed := getTopic(key, password)
-
-	if !allowed {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	} else if !topic.hasHistory {
+	if !topic.hasHistory {
 		http.Error(w, "No history", http.StatusBadRequest)
 		return
 	}
@@ -343,7 +300,7 @@ func del(w http.ResponseWriter, r *http.Request) {
 	defer topic.Unlock()
 
 	topic.history = make([]Msg, 0)
-	topic.deleteHistory(key)
+	topic.deleteHistory(r.URL.Path)
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {

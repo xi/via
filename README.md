@@ -34,13 +34,6 @@ Use the `hmsg` prefix if you want to keep a history:
 	# the `historyRemaining` field in POST responses tells you how much space is left
 	curl http://localhost:8001/hmsg/someid -d combined -H 'Last-Event-Id: 3' -X PUT
 
-You can also protect your ID with a password so no one else can listen to
-it at the same time:
-
-	curl http://localhost:8001/msg/someid:somepassword
-	curl http://localhost:8001/msg/someid  # 403
-	curl http://localhost:8001/msg/someid -d somedata  # 200
-
 You should regularly clean up old files:
 
 	find {storage_dir} -type f -mtime +7 -delete
