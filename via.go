@@ -305,6 +305,7 @@ func del(w http.ResponseWriter, r *http.Request) {
 	defer topic.Unlock()
 
 	topic.history = make([]Msg, 0)
+	topic.lastId = 0
 	topic.deleteHistory(r.URL.Path)
 }
 
