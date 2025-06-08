@@ -34,7 +34,7 @@ type Topic struct {
 	lastId     int
 }
 
-var mux = &sync.RWMutex{}
+var mux = &sync.Mutex{}
 var topics = make(map[string]*Topic)
 var verbose = false
 var maxHistorySize = 100
@@ -133,9 +133,9 @@ func (topic *Topic) put(data []byte, lastId int) {
 }
 
 func getTopic(key string) *Topic {
-	mux.RLock()
+	mux.Lock()
+	defer mux.Unlock()
 	topic, exists := topics[key]
-	mux.RUnlock()
 
 	if !exists {
 		topic = &Topic{
@@ -147,9 +147,7 @@ func getTopic(key string) *Topic {
 		if topic.hasHistory {
 			topic.restoreHistory(key)
 		}
-		mux.Lock()
 		topics[key] = topic
-		mux.Unlock()
 	}
 
 	return topic
@@ -173,9 +171,9 @@ func pushChannel(key string, ch chan Msg, lastId int) {
 }
 
 func popChannel(key string, ch chan Msg) {
-	mux.RLock()
+	mux.Lock()
+	defer mux.Unlock()
 	topic := topics[key]
-	mux.RUnlock()
 
 	topic.Lock()
 	delete(topic.channels, ch)
@@ -185,9 +183,7 @@ func popChannel(key string, ch chan Msg) {
 		if verbose {
 			log.Println("clearing topic", key)
 		}
-		mux.Lock()
 		delete(topics, key)
-		mux.Unlock()
 	}
 }
 
@@ -199,9 +195,9 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mux.RLock()
+	mux.Lock()
 	topic, exists := topics[r.URL.Path]
-	mux.RUnlock()
+	mux.Unlock()
 
 	response := make(map[string]int)
 	defer func() {
