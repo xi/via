@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -56,7 +57,7 @@ func (topic *Topic) storeHistory(key string) {
 	}
 
 	path := getStorePath(key)
-	err = ioutil.WriteFile(path, content, 0644)
+	err = os.WriteFile(path, content, 0644)
 	if err != nil {
 		log.Println("error storing history:", err)
 		return
@@ -66,9 +67,9 @@ func (topic *Topic) storeHistory(key string) {
 func (topic *Topic) restoreHistory(key string) {
 	path := getStorePath(key)
 
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			log.Println("error restoring history:", err)
 		}
 		return
@@ -191,7 +192,7 @@ func popChannel(key string, ch chan Msg) {
 }
 
 func post(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Println("error reading request body:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -278,7 +279,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Println("error reading request body:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
