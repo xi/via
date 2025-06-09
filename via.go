@@ -133,10 +133,10 @@ func (topic *Topic) put(data []byte, lastId int) {
 
 func getTopic(key string) *Topic {
 	mux.RLock()
-	topic, ok := topics[key]
+	topic, exists := topics[key]
 	mux.RUnlock()
 
-	if !ok {
+	if !exists {
 		topic = &Topic{
 			channels:   make(map[chan Msg]bool, 0),
 			hasHistory: hasHistory(key),
@@ -199,7 +199,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mux.RLock()
-	topic, ok := topics[r.URL.Path]
+	topic, exists := topics[r.URL.Path]
 	mux.RUnlock()
 
 	response := make(map[string]int)
@@ -208,7 +208,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(response)
 	}()
 
-	if !ok {
+	if !exists {
 		return
 	}
 
