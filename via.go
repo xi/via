@@ -42,6 +42,7 @@ type Topic struct {
 	history    []Msg
 	path       string
 	lastId     int
+	refCount   int
 	subChan    chan Sub
 	unsubChan  chan chan Msg
 	postChan   chan Post
@@ -103,16 +104,19 @@ func (topic *Topic) deleteHistory() {
 }
 
 func (topic *Topic) cleanup(key string) bool {
-	if len(topic.channels) > 0 {
+	mux.Lock()
+	defer mux.Unlock()
+
+	topic.refCount -= 1
+
+	if topic.refCount > 0 {
 		return false
 	}
 
 	if verbose {
 		log.Println("clearing topic", key)
 	}
-	mux.Lock()
 	delete(topics, key)
-	mux.Unlock()
 	return true
 }
 
@@ -122,6 +126,8 @@ func (topic *Topic) run(key string) {
 	}
 
 	for {
+		doCleanup := true
+
 		select {
 		case sub := <-topic.subChan:
 			for _, msg := range topic.history {
@@ -131,6 +137,7 @@ func (topic *Topic) run(key string) {
 			}
 
 			topic.channels[sub.ch] = true
+			doCleanup = false
 		case ch := <-topic.unsubChan:
 			close(ch)
 			delete(topic.channels, ch)
@@ -177,7 +184,7 @@ func (topic *Topic) run(key string) {
 			topic.deleteHistory()
 		}
 
-		if topic.cleanup(key) {
+		if doCleanup && topic.cleanup(key) {
 			break
 		}
 	}
@@ -196,6 +203,7 @@ func getTopic(key string) *Topic {
 			history:    make([]Msg, 0),
 			path:       path.Join(dir, filename),
 			lastId:     0,
+			refCount:   0,
 			subChan:    make(chan Sub),
 			unsubChan:  make(chan chan Msg),
 			postChan:   make(chan Post),
@@ -205,6 +213,8 @@ func getTopic(key string) *Topic {
 		topics[key] = topic
 		go topic.run(key)
 	}
+
+	topic.refCount += 1
 
 	return topic
 }
