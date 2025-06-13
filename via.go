@@ -132,6 +132,7 @@ func (topic *Topic) run(key string) {
 
 			topic.channels[sub.ch] = true
 		case ch := <-topic.unsubChan:
+			close(ch)
 			delete(topic.channels, ch)
 		case post := <-topic.postChan:
 			topic.lastId += 1
@@ -240,7 +241,12 @@ func get(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			log.Println("lost a connection on", r.URL.Path)
-			topic.unsubChan <- ch
+			go func() {
+				topic.unsubChan <- ch
+			}()
+			for _ = range ch {
+				// drain channel until unusub closes it
+			}
 			return
 		case <-ticker.C:
 			fmt.Fprintf(w, ": ping\n\n")
