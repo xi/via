@@ -26,13 +26,27 @@ type Msg struct {
 	Data []byte
 }
 
+type Sub struct {
+	ch     chan Msg
+	lastId int
+}
+
+type Post struct {
+	data []byte
+	ch   chan int
+}
+
 type Topic struct {
-	sync.Mutex
 	channels   map[chan Msg]bool
 	hasHistory bool
 	history    []Msg
 	path       string
 	lastId     int
+	subChan    chan Sub
+	unsubChan  chan chan Msg
+	postChan   chan Post
+	putChan    chan Msg
+	delChan    chan struct{}
 }
 
 var mux = &sync.Mutex{}
@@ -88,48 +102,83 @@ func (topic *Topic) deleteHistory() {
 	}
 }
 
-func (topic *Topic) post(data []byte) {
-	topic.lastId += 1
-	msg := Msg{topic.lastId, data}
+func (topic *Topic) cleanup(key string) bool {
+	if len(topic.channels) > 0 {
+		return false
+	}
 
+	if verbose {
+		log.Println("clearing topic", key)
+	}
+	mux.Lock()
+	delete(topics, key)
+	mux.Unlock()
+	return true
+}
+
+func (topic *Topic) run(key string) {
 	if topic.hasHistory {
-		topic.history = append(topic.history, msg)
-
-		for len(topic.history) > maxHistorySize {
-			topic.history = topic.history[1:]
-		}
+		topic.restoreHistory()
 	}
 
-	for ch := range topic.channels {
-		ch <- msg
-	}
-}
+	for {
+		select {
+		case sub := <-topic.subChan:
+			for _, msg := range topic.history {
+				if msg.Id > sub.lastId {
+					sub.ch <- msg
+				}
+			}
 
-func (topic *Topic) put(data []byte, lastId int) {
-	if len(topic.history) > 0 && lastId < topic.history[0].Id {
-		return
-	}
+			topic.channels[sub.ch] = true
+		case ch := <-topic.unsubChan:
+			delete(topic.channels, ch)
+		case post := <-topic.postChan:
+			topic.lastId += 1
+			msg := Msg{topic.lastId, post.data}
 
-	history := make([]Msg, 0)
-	history = append(history, Msg{lastId, data})
-	for _, msg := range topic.history {
-		if msg.Id > lastId {
+			if topic.hasHistory {
+				topic.history = append(topic.history, msg)
+				for len(topic.history) > maxHistorySize {
+					topic.history = topic.history[1:]
+				}
+				topic.storeHistory()
+
+				post.ch <- maxHistorySize - len(topic.history)
+			}
+
+			close(post.ch)
+
+			for ch := range topic.channels {
+				ch <- msg
+			}
+		case msg := <-topic.putChan:
+			if len(topic.history) > 0 && msg.Id < topic.history[0].Id {
+				continue
+			}
+
+			history := make([]Msg, 0)
 			history = append(history, msg)
-		}
-	}
-	topic.history = history
+			for _, m := range topic.history {
+				if m.Id > msg.Id {
+					history = append(history, m)
+				}
+			}
+			topic.history = history
+			topic.storeHistory()
 
-	if lastId > topic.lastId {
-		topic.lastId = lastId
-	}
-}
-
-func (topic *Topic) cleanup(key string) {
-	if len(topic.channels) == 0 {
-		if verbose {
-			log.Println("clearing topic", key)
+			if msg.Id > topic.lastId {
+				topic.lastId = msg.Id
+			}
+		case _ = <-topic.delChan:
+			topic.history = make([]Msg, 0)
+			topic.lastId = 0
+			topic.deleteHistory()
 		}
-		delete(topics, key)
+
+		if topic.cleanup(key) {
+			break
+		}
 	}
 }
 
@@ -146,43 +195,17 @@ func getTopic(key string) *Topic {
 			history:    make([]Msg, 0),
 			path:       path.Join(dir, filename),
 			lastId:     0,
-		}
-		if topic.hasHistory {
-			topic.restoreHistory()
+			subChan:    make(chan Sub),
+			unsubChan:  make(chan chan Msg),
+			postChan:   make(chan Post),
+			putChan:    make(chan Msg),
+			delChan:    make(chan struct{}),
 		}
 		topics[key] = topic
+		go topic.run(key)
 	}
 
 	return topic
-}
-
-func pushChannel(key string, ch chan Msg, lastId int) {
-	topic := getTopic(key)
-
-	go func() {
-		topic.Lock()
-		defer topic.Unlock()
-
-		for _, msg := range topic.history {
-			if msg.Id > lastId {
-				ch <- msg
-			}
-		}
-
-		topic.channels[ch] = true
-	}()
-}
-
-func popChannel(key string, ch chan Msg) {
-	mux.Lock()
-	defer mux.Unlock()
-	topic := topics[key]
-
-	topic.Lock()
-	delete(topic.channels, ch)
-	topic.Unlock()
-
-	topic.cleanup(key)
 }
 
 func get(w http.ResponseWriter, r *http.Request) {
@@ -191,9 +214,10 @@ func get(w http.ResponseWriter, r *http.Request) {
 		lastId = 0
 	}
 
+	topic := getTopic(r.URL.Path)
+
 	ch := make(chan Msg)
-	pushChannel(r.URL.Path, ch, lastId)
-	defer popChannel(r.URL.Path, ch)
+	topic.subChan <- Sub{ch, lastId}
 
 	ctx := r.Context()
 
@@ -215,6 +239,8 @@ func get(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("lost a connection on", r.URL.Path)
+			topic.unsubChan <- ch
 			return
 		case <-ticker.C:
 			fmt.Fprintf(w, ": ping\n\n")
@@ -234,24 +260,18 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ch := make(chan int)
 	topic := getTopic(r.URL.Path)
-	defer topic.cleanup(r.URL.Path)
+	topic.postChan <- Post{body, ch}
 
 	response := make(map[string]int)
-	defer func() {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}()
-
-	topic.Lock()
-	defer topic.Unlock()
-
-	topic.post(body)
-
-	if topic.hasHistory {
-		topic.storeHistory()
-		response["historyRemaining"] = maxHistorySize - len(topic.history)
+	remaining, ok := <-ch
+	if ok {
+		response["historyRemaining"] = remaining
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 func put(w http.ResponseWriter, r *http.Request) {
@@ -274,13 +294,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic := getTopic(r.URL.Path)
-	defer topic.cleanup(r.URL.Path)
-
-	topic.Lock()
-	defer topic.Unlock()
-
-	topic.put(body, lastId)
-	topic.storeHistory()
+	topic.putChan <- Msg{lastId, body}
 }
 
 func del(w http.ResponseWriter, r *http.Request) {
@@ -290,14 +304,7 @@ func del(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic := getTopic(r.URL.Path)
-	defer topic.cleanup(r.URL.Path)
-
-	topic.Lock()
-	defer topic.Unlock()
-
-	topic.history = make([]Msg, 0)
-	topic.lastId = 0
-	topic.deleteHistory()
+	topic.delChan <- struct{}{}
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
