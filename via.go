@@ -124,6 +124,15 @@ func (topic *Topic) put(data []byte, lastId int) {
 	}
 }
 
+func (topic *Topic) cleanup(key string) {
+	if len(topic.channels) == 0 {
+		if verbose {
+			log.Println("clearing topic", key)
+		}
+		delete(topics, key)
+	}
+}
+
 func getTopic(key string) *Topic {
 	mux.Lock()
 	defer mux.Unlock()
@@ -173,12 +182,7 @@ func popChannel(key string, ch chan Msg) {
 	delete(topic.channels, ch)
 	topic.Unlock()
 
-	if len(topic.channels) == 0 {
-		if verbose {
-			log.Println("clearing topic", key)
-		}
-		delete(topics, key)
-	}
+	topic.cleanup(key)
 }
 
 func get(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +235,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic := getTopic(r.URL.Path)
+	defer topic.cleanup(r.URL.Path)
 
 	response := make(map[string]int)
 	defer func() {
@@ -256,6 +261,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic := getTopic(r.URL.Path)
+	defer topic.cleanup(r.URL.Path)
 
 	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
 	if err != nil {
@@ -284,6 +290,7 @@ func del(w http.ResponseWriter, r *http.Request) {
 	}
 
 	topic := getTopic(r.URL.Path)
+	defer topic.cleanup(r.URL.Path)
 
 	topic.Lock()
 	defer topic.Unlock()
