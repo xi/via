@@ -260,9 +260,6 @@ func put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topic := getTopic(r.URL.Path)
-	defer topic.cleanup(r.URL.Path)
-
 	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
 	if err != nil {
 		http.Error(w, "Missing Last-Event-ID", http.StatusBadRequest)
@@ -275,6 +272,9 @@ func put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	topic := getTopic(r.URL.Path)
+	defer topic.cleanup(r.URL.Path)
 
 	topic.Lock()
 	defer topic.Unlock()
