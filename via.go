@@ -230,19 +230,13 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mux.Lock()
-	topic, exists := topics[r.URL.Path]
-	mux.Unlock()
+	topic := getTopic(r.URL.Path)
 
 	response := make(map[string]int)
 	defer func() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	}()
-
-	if !exists {
-		return
-	}
 
 	topic.Lock()
 	defer topic.Unlock()
