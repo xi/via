@@ -31,6 +31,7 @@ type Topic struct {
 	channels   map[chan Msg]bool
 	hasHistory bool
 	history    []Msg
+	path       string
 	lastId     int
 }
 
@@ -40,34 +41,26 @@ var verbose = false
 var maxHistorySize = 100
 var dir = ""
 
-func getStorePath(key string) string {
-	hash := base64.URLEncoding.EncodeToString([]byte(key))
-	return path.Join(dir, hash)
-}
-
 func hasHistory(key string) bool {
 	return strings.HasPrefix(key, "/hmsg/")
 }
 
-func (topic *Topic) storeHistory(key string) {
+func (topic *Topic) storeHistory() {
 	content, err := json.Marshal(topic.history)
 	if err != nil {
 		log.Println("error storing history:", err)
 		return
 	}
 
-	path := getStorePath(key)
-	err = os.WriteFile(path, content, 0644)
+	err = os.WriteFile(topic.path, content, 0644)
 	if err != nil {
 		log.Println("error storing history:", err)
 		return
 	}
 }
 
-func (topic *Topic) restoreHistory(key string) {
-	path := getStorePath(key)
-
-	content, err := os.ReadFile(path)
+func (topic *Topic) restoreHistory() {
+	content, err := os.ReadFile(topic.path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			log.Println("error restoring history:", err)
@@ -88,9 +81,8 @@ func (topic *Topic) restoreHistory(key string) {
 	}
 }
 
-func (topic *Topic) deleteHistory(key string) {
-	path := getStorePath(key)
-	err := os.Remove(path)
+func (topic *Topic) deleteHistory() {
+	err := os.Remove(topic.path)
 	if err != nil && !os.IsNotExist(err) {
 		log.Println("error deleting history:", err)
 	}
@@ -138,14 +130,16 @@ func getTopic(key string) *Topic {
 	topic, exists := topics[key]
 
 	if !exists {
+		filename := base64.URLEncoding.EncodeToString([]byte(key))
 		topic = &Topic{
 			channels:   make(map[chan Msg]bool, 0),
 			hasHistory: hasHistory(key),
 			history:    make([]Msg, 0),
+			path:       path.Join(dir, filename),
 			lastId:     0,
 		}
 		if topic.hasHistory {
-			topic.restoreHistory(key)
+			topic.restoreHistory()
 		}
 		topics[key] = topic
 	}
@@ -215,7 +209,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 	topic.post(body)
 
 	if topic.hasHistory {
-		topic.storeHistory(r.URL.Path)
+		topic.storeHistory()
 		response["historyRemaining"] = maxHistorySize - len(topic.history)
 	}
 }
@@ -286,7 +280,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	defer topic.Unlock()
 
 	topic.put(body, lastId)
-	topic.storeHistory(r.URL.Path)
+	topic.storeHistory()
 }
 
 func del(w http.ResponseWriter, r *http.Request) {
@@ -302,7 +296,7 @@ func del(w http.ResponseWriter, r *http.Request) {
 
 	topic.history = make([]Msg, 0)
 	topic.lastId = 0
-	topic.deleteHistory(r.URL.Path)
+	topic.deleteHistory()
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
