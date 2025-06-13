@@ -181,39 +181,6 @@ func popChannel(key string, ch chan Msg) {
 	}
 }
 
-func post(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Println("error reading request body:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	mux.Lock()
-	topic, exists := topics[r.URL.Path]
-	mux.Unlock()
-
-	response := make(map[string]int)
-	defer func() {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}()
-
-	if !exists {
-		return
-	}
-
-	topic.Lock()
-	defer topic.Unlock()
-
-	topic.post(body)
-
-	if topic.hasHistory {
-		topic.storeHistory()
-		response["historyRemaining"] = maxHistorySize - len(topic.history)
-	}
-}
-
 func get(w http.ResponseWriter, r *http.Request) {
 	lastId, err := strconv.Atoi(r.Header.Get("Last-Event-ID"))
 	if err != nil {
@@ -252,6 +219,39 @@ func get(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", msg.Id, msg.Data)
 			flusher.Flush()
 		}
+	}
+}
+
+func post(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Println("error reading request body:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	mux.Lock()
+	topic, exists := topics[r.URL.Path]
+	mux.Unlock()
+
+	response := make(map[string]int)
+	defer func() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}()
+
+	if !exists {
+		return
+	}
+
+	topic.Lock()
+	defer topic.Unlock()
+
+	topic.post(body)
+
+	if topic.hasHistory {
+		topic.storeHistory()
+		response["historyRemaining"] = maxHistorySize - len(topic.history)
 	}
 }
 
