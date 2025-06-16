@@ -196,7 +196,10 @@ func getTopic(key string) *Topic {
 	topic, exists := topics[key]
 
 	if !exists {
-		filename := base64.URLEncoding.EncodeToString([]byte(key))
+		// keep this format for backwards compatibility
+		filename := base64.URLEncoding.EncodeToString([]byte(
+			fmt.Sprintf("%s:", key)),
+		)
 		topic = &Topic{
 			channels:   make(map[chan Msg]bool, 0),
 			hasHistory: hasHistory(key),
