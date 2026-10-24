@@ -345,19 +345,19 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	port := 8000
+
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "via [-v] [-d storage_dir] [port]\n")
+		fmt.Fprintf(os.Stderr, "via [-v] [-d storage_dir] [-p port]\n")
 		flag.PrintDefaults()
 	}
 
 	flag.BoolVar(&verbose, "v", false, "enable verbose logs")
 	flag.StringVar(&dir, "d", ".", "directory for storage")
+	flag.IntVar(&port, "p", 8000, "port")
 	flag.Parse()
 
-	addr := "localhost:8001"
-	if len(flag.Args()) > 0 {
-		addr = fmt.Sprintf("localhost:%s", flag.Args()[0])
-	}
+	addr := fmt.Sprintf("localhost:%d", port)
 
 	http.HandleFunc("/msg/", handler)
 	http.HandleFunc("/hmsg/", handler)

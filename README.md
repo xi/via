@@ -8,7 +8,7 @@ This is very much inspired by <https://patchbay.pub/> and its clones
 
 Start the server:
 
-	via [-v] [-d storage_dir] [port]
+	via [-v] [-d storage_dir] [-p port]
 
 Then start sending requests on the client:
 
