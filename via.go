@@ -371,7 +371,7 @@ func main() {
 	go func() {
 		log.Printf("Serving on http://%s", addr)
 		err := server.ListenAndServe()
-		if err != http.ErrServerClosed {
+		if err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
