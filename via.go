@@ -344,6 +344,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getListener(port int) (net.Listener, error) {
+	if os.Getenv("LISTEN_PID") == strconv.Itoa(os.Getpid()) {
+		f := os.NewFile(uintptr(3), "systemd-socket")
+		return net.FileListener(f)
+	} else {
+		addr := fmt.Sprintf("localhost:%d", port)
+		return net.Listen("tcp", addr)
+	}
+}
+
 func main() {
 	port := 8000
 
@@ -357,8 +367,6 @@ func main() {
 	flag.IntVar(&port, "p", 8000, "port")
 	flag.Parse()
 
-	addr := fmt.Sprintf("localhost:%d", port)
-
 	http.HandleFunc("/msg/", handler)
 	http.HandleFunc("/hmsg/", handler)
 
@@ -366,11 +374,14 @@ func main() {
 		context.Background(), os.Interrupt, syscall.SIGTERM,
 	)
 	ctxFactory := func(l net.Listener) context.Context { return ctx }
-	server := &http.Server{Addr: addr, BaseContext: ctxFactory}
+	server := &http.Server{BaseContext: ctxFactory}
 
 	go func() {
-		log.Printf("Serving on http://%s", addr)
-		err := server.ListenAndServe()
+		listener, err := getListener(port)
+		if err == nil {
+			log.Printf("Serving on %s", listener.Addr())
+			err = server.Serve(listener)
+		}
 		if err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
