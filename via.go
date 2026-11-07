@@ -162,7 +162,7 @@ func (topic *Topic) run(key string) {
 			}
 		case msg := <-topic.putChan:
 			if len(topic.history) > 0 && msg.Id < topic.history[0].Id {
-				continue
+				break
 			}
 
 			history := make([]Msg, 0)
