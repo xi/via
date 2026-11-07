@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -265,7 +266,11 @@ func get(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, ": ping\n\n")
 			flusher.Flush()
 		case msg := <-ch:
-			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", msg.Id, msg.Data)
+			fmt.Fprintf(w, "id: %d\n", msg.Id)
+			for line := range bytes.Lines(msg.Data) {
+				fmt.Fprintf(w, "data: %s\n", bytes.TrimRight(line, "\r\n"))
+			}
+			fmt.Fprint(w, "\n")
 			flusher.Flush()
 		}
 	}
