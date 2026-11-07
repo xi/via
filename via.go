@@ -379,7 +379,13 @@ func main() {
 		context.Background(), os.Interrupt, syscall.SIGTERM,
 	)
 	ctxFactory := func(l net.Listener) context.Context { return ctx }
-	server := &http.Server{BaseContext: ctxFactory}
+	server := &http.Server{
+		BaseContext:       ctxFactory,
+		ReadTimeout:       5 * time.Second,
+		// WriteTimeout:  unset because SSE responses are long-lived
+		ReadHeaderTimeout: 2 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 
 	go func() {
 		listener, err := getListener(port)
