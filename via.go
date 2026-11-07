@@ -228,6 +228,12 @@ func get(w http.ResponseWriter, r *http.Request) {
 		lastId = 0
 	}
 
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	topic := getTopic(r.URL.Path)
 
 	ch := make(chan Msg)
@@ -237,12 +243,6 @@ func get(w http.ResponseWriter, r *http.Request) {
 
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no")
